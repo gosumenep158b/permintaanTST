@@ -97,6 +97,15 @@
     .btn-sm { padding: 7px 12px; font-size: 13px; min-height: 34px; }
     .btn:disabled { opacity: .6; cursor: not-allowed; }
 
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+    .stat {
+      background: var(--putih); border: 1px solid var(--abu-garis);
+      border-radius: var(--radius); padding: 16px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .stat-num { font-size: 30px; font-weight: 800; color: var(--merah); line-height: 1.1; }
+    .stat-label { font-size: 13px; color: var(--teks-muda); font-weight: 600; }
+
     .tabs { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 12px; scrollbar-width: none; }
     .tabs::-webkit-scrollbar { display: none; }
     .tab-btn {
@@ -160,6 +169,20 @@
     .txt-ok { color: var(--hijau-gelap); font-size: 12.5px; }
     .txt-muted { color: var(--teks-muda); font-size: 12.5px; }
 
+    .peserta-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .peserta-row .form-input { flex: 1; min-width: 200px; }
+    .peserta-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .peserta-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--merah-terang); color: var(--merah);
+      border: 1px solid var(--merah); border-radius: 999px;
+      padding: 5px 12px; font-size: 13px; font-weight: 600;
+    }
+    .peserta-chip button {
+      background: none; border: none; color: var(--merah); font-size: 16px;
+      line-height: 1; cursor: pointer; padding: 0;
+    }
+
     .antrian-list { display: flex; flex-direction: column; gap: 10px; }
     .antrian-item {
       display: flex; justify-content: space-between; align-items: center; gap: 14px;
@@ -221,6 +244,7 @@
 
     @media (max-width: 720px) {
       .header { position: static; }
+      .stats { grid-template-columns: repeat(2, 1fr); gap: 8px; }
       .tabs {
         position: sticky; top: 0; z-index: 40;
         background: var(--abu); padding: 8px 4px 10px;
@@ -355,6 +379,10 @@
               <input type="text" id="inNamaBab" placeholder="cth: Bab 1 Bilangan" required>
             </div>
             <div class="field">
+              <label>Tanggal Kebutuhan <span class="opt">(deadline PR/Tugas/UH)</span></label>
+              <input type="date" id="inTglKebutuhan">
+            </div>
+            <div class="field">
               <label>Tanggal Permintaan TST</label>
               <input type="date" id="inTgl" required>
             </div>
@@ -368,6 +396,16 @@
               <label>Keterangan (opsional)</label>
               <textarea id="inKet" rows="2" placeholder="Catatan tambahan bila ada"></textarea>
             </div>
+            <div class="field full">
+              <label>Siswa Lain yang Ikut <span class="opt">(opsional)</span></label>
+              <div class="peserta-row">
+                <select id="inSiswaLain" class="form-input">
+                  <option value="">-- Pilih siswa tambahan --</option>
+                </select>
+                <button type="button" class="btn btn-outline" onclick="addPeserta()">Tambah</button>
+              </div>
+              <div id="listPeserta" class="peserta-list"></div>
+            </div>
           </div>
           <button class="btn btn-primary btn-block" type="submit">Kirim Permintaan</button>
         </form>
@@ -375,6 +413,12 @@
     </section>
 
     <section id="view-admin" class="view hidden">
+      <div class="stats" id="ringkasan">
+        <div class="stat"><span class="stat-num" id="statToday">0</span><span class="stat-label">Permintaan Hari Ini</span></div>
+        <div class="stat"><span class="stat-num" id="statWaiting">0</span><span class="stat-label">Menunggu</span></div>
+        <div class="stat"><span class="stat-num" id="statScheduled">0</span><span class="stat-label">Sudah Dijadwalkan</span></div>
+        <div class="stat"><span class="stat-num" id="statRejected">0</span><span class="stat-label">Ditolak</span></div>
+      </div>
       <nav class="tabs" id="tabs">
         <button class="tab-btn active" data-tab="tab-permintaan">Permintaan TST</button>
         <button class="tab-btn" data-tab="tab-penjadwalan">Penjadwalan TST</button>
@@ -520,7 +564,7 @@
 
   </main>
 
-  <footer class="footer">TST GO Sumenep v5.2</footer>
+  <footer class="footer">TST GO Sumenep v7.0</footer>
 
   <div id="loginModal" class="modal hidden">
     <div class="modal-box">
@@ -632,6 +676,7 @@
           case 'kirimPesanWA': run.kirimPesanWA(args[0], args[1]); break;
           case 'gantiPassword': run.gantiPassword(args[0], args[1], args[2]); break;
           case 'getAdminUser': run.getAdminUser(args[0]); break;
+          case 'getRingkasan': run.getRingkasan(args[0]); break;
           case 'getTelegramStatus': run.getTelegramStatus(args[0]); break;
           case 'simpanBotConfig': run.simpanBotConfig(args[0], args[1], args[2]); break;
           case 'tesTelegram': run.tesTelegram(args[0]); break;
@@ -728,6 +773,56 @@
     function onNamaChange() {
       var s = siswaList[Number($('inNama').value)];
       $('inNoHp').value = s ? s.noHp : '';
+      buildSiswaLain();
+    }
+
+    var pesertaList = [];
+
+    function buildSiswaLain() {
+      var sel = $('inSiswaLain');
+      var mainIdx = Number($('inNama').value);
+      var used = {};
+      pesertaList.forEach(function (p) { used[p.nama] = true; });
+      if (!isNaN(mainIdx) && siswaList[mainIdx]) used[siswaList[mainIdx].nama] = true;
+      sel.innerHTML = '<option value="">-- Pilih siswa tambahan --</option>';
+      siswaList.forEach(function (s, i) {
+        if (used[s.nama]) return;
+        var o = document.createElement('option');
+        o.value = String(i);
+        o.textContent = s.tingkat + ' | ' + s.kelasGo + ' | ' + s.nama;
+        sel.appendChild(o);
+      });
+      sel.disabled = sel.options.length <= 1;
+    }
+
+    function addPeserta() {
+      var i = Number($('inSiswaLain').value);
+      if (isNaN(i) || !siswaList[i]) { showToast('Pilih siswa tambahan dulu.', 'err'); return; }
+      pesertaList.push({ nama: siswaList[i].nama, tingkat: siswaList[i].tingkat, kelasGo: siswaList[i].kelasGo, noHp: siswaList[i].noHp });
+      renderPeserta();
+      buildSiswaLain();
+    }
+
+    function removePeserta(i) {
+      pesertaList.splice(i, 1);
+      renderPeserta();
+      buildSiswaLain();
+    }
+
+    function renderPeserta() {
+      var el = $('listPeserta');
+      if (!pesertaList.length) {
+        el.innerHTML = '<span class="txt-muted">Belum ada siswa tambahan.</span>';
+        return;
+      }
+      el.innerHTML = '';
+      pesertaList.forEach(function (p, i) {
+        var c = document.createElement('span');
+        c.className = 'peserta-chip';
+        c.innerHTML = esc(p.nama) + ' <small>(' + esc(p.kelasGo) + ')</small> ' +
+          '<button type="button" onclick="removePeserta(' + i + ')">&times;</button>';
+        el.appendChild(c);
+      });
     }
 
     function doSubmit(e) {
@@ -740,9 +835,11 @@
         noHp: $('inNoHp').value,
         mapel: $('inMapel').value.trim(),
         namaBab: $('inNamaBab').value.trim(),
+        tglKebutuhan: $('inTglKebutuhan').value,
         tglPermintaan: $('inTgl').value,
         kebutuhan: $('inKebutuhan').value,
-        keterangan: $('inKet').value.trim()
+        keterangan: $('inKet').value.trim(),
+        peserta: pesertaList
       };
       if (!data.namaBab) { showToast('Nama bab wajib diisi.', 'err'); return false; }
       if (!data.tglPermintaan) { showToast('Tanggal permintaan wajib diisi.', 'err'); return false; }
@@ -752,6 +849,9 @@
           $('requestForm').reset();
           $('inTgl').value = todayISO();
           resetKelasGo();
+          pesertaList = [];
+          renderPeserta();
+          buildSiswaLain();
           if (isAdmin) loadAdmin();
         } else {
           showToast(res.message, 'err');
@@ -865,6 +965,13 @@
         u = u || {};
         $('inUser').value = (u.user || 'admin') + ' - ' + (u.posisi || 'Admin');
       });
+      call('getRingkasan', [token], function (res) {
+        if (!res || res.error) return;
+        $('statToday').textContent = res.today || 0;
+        $('statWaiting').textContent = res.waiting || 0;
+        $('statScheduled').textContent = res.scheduled || 0;
+        $('statRejected').textContent = res.rejected || 0;
+      });
       renderSiswa();
       renderAdmins();
     }
@@ -880,7 +987,7 @@
       if (!rows.length) {
         html = '<tr><td class="empty">Belum ada data.</td></tr>';
       } else {
-        html = '<thead><tr><th>No</th><th>Tanggal</th><th>Nama</th><th>Kelas GO</th><th>Tingkat</th><th>Bab</th><th>Mapel</th><th>Kebutuhan</th><th>Status</th></tr></thead><tbody>';
+        html = '<thead><tr><th>No</th><th>Tanggal</th><th>Nama</th><th>Kelas GO</th><th>Tingkat</th><th>Bab</th><th>Tgl Kebutuhan</th><th>Mapel</th><th>Kebutuhan</th><th>Status</th></tr></thead><tbody>';
         rows.forEach(function (r) {
           html += '<tr>' +
             '<td data-label="No">' + esc(r.no) + '</td>' +
@@ -889,6 +996,7 @@
             '<td data-label="Kelas GO">' + esc(r.kelasGo) + '</td>' +
             '<td data-label="Tingkat">' + esc(r.tingkat) + '</td>' +
             '<td data-label="Bab">' + esc(r.namaBab) + '</td>' +
+            '<td data-label="Tgl Kebutuhan">' + (r.tglKebutuhan ? esc(r.tglKebutuhan) : '-') + '</td>' +
             '<td data-label="Mapel">' + esc(r.mapel) + '</td>' +
             '<td data-label="Kebutuhan">' + badge(r.kebutuhan) + '</td>' +
             '<td data-label="Status">' + badge(r.status) + '</td>' +
@@ -913,20 +1021,28 @@
       if (!list.length) {
         html = '<p class="empty" style="padding:20px;text-align:center;color:var(--teks-muda)">Tidak ada permintaan dalam antrian.</p>';
       } else {
+        var groups = {};
         list.forEach(function (r) {
+          if (!groups[r.no]) groups[r.no] = { info: r, siswa: [] };
+          groups[r.no].siswa.push({ nama: r.nama, kelasGo: r.kelasGo, tingkat: r.tingkat });
+        });
+        Object.keys(groups).forEach(function (no) {
+          var g = groups[no];
+          var info = g.info;
+          var namaList = g.siswa.map(function (s) { return s.nama + ' (' + s.kelasGo + ')'; }).join(', ');
           html +=
             '<div class="antrian-item">' +
               '<div class="antrian-info">' +
-                '<strong>' + esc(r.nama) + '</strong>' +
-                '<span>' + esc(r.kelasGo) + ' &middot; ' + esc(r.tingkat) + '</span>' +
-                '<span>' + esc(r.namaBab || '') + (r.mapel ? ' &middot; ' + esc(r.mapel) : '') + ' &middot; ' + badge(r.kebutuhan) + '</span>' +
-                '<small>No ' + esc(r.no) + ' &middot; Permintaan: ' + esc(r.tglPermintaan) + '</small>' +
+                '<strong>' + esc(info.nama) + (g.siswa.length > 1 ? ' +' + (g.siswa.length - 1) + ' siswa' : '') + '</strong>' +
+                '<span>Peserta: ' + esc(namaList) + '</span>' +
+                '<span>' + esc(info.namaBab || '') + (info.mapel ? ' &middot; ' + esc(info.mapel) : '') + ' &middot; ' + badge(info.kebutuhan) + '</span>' +
+                '<small>No ' + esc(info.no) + ' &middot; Permintaan: ' + esc(info.tglPermintaan) + '</small>' +
               '</div>' +
               '<div class="antrian-aksi">' +
-                '<input type="date" class="form-input" id="tgl_' + esc(r.no) + '" min="' + todayISO() + '" value="' + todayISO() + '">' +
-                '<input type="time" class="form-input" id="jam_' + esc(r.no) + '" value="15:00">' +
-                '<input type="text" class="form-input input-pgj" id="pgj_' + esc(r.no) + '" placeholder="Nama pengajar">' +
-                '<button class="btn btn-primary" onclick="doJadwal(' + Number(r.no) + ')">Jadwalkan</button>' +
+                '<input type="date" class="form-input" id="tgl_' + esc(no) + '" min="' + todayISO() + '" value="' + todayISO() + '">' +
+                '<input type="time" class="form-input" id="jam_' + esc(no) + '" value="15:00">' +
+                '<input type="text" class="form-input input-pgj" id="pgj_' + esc(no) + '" placeholder="Nama pengajar">' +
+                '<button class="btn btn-primary" onclick="doJadwal(' + Number(no) + ')">Jadwalkan</button>' +
               '</div>' +
             '</div>';
         });
@@ -1099,6 +1215,7 @@
       call('getSiswa', [], function (res) {
         siswaList = res || [];
         buildTingkat();
+        buildSiswaLain();
         renderSiswa();
       });
       renderHeader();
