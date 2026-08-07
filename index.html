@@ -446,12 +446,41 @@
       <div class="tab-panel hidden" id="tab-pengaturan">
         <div class="card">
           <div class="card-head">
-            <h2>Pengaturan Admin</h2>
-            <p>Username &amp; password tersimpan di Script Properties. Default login: <strong>admin / admin123</strong> - segera ganti password Anda.</p>
+            <h2>Akun Admin</h2>
+            <p>Kelola beberapa akun admin. Akun tersimpan di sheet <strong>Admin</strong> pada spreadsheet. Default login: <strong>admin / admin123</strong>.</p>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="tableAdmins"></table>
+          </div>
+          <div class="form-grid" style="margin-top:14px">
+            <div class="field">
+              <label>Username Baru</label>
+              <input type="text" id="inNewUser" placeholder="Contoh: bu_tari">
+            </div>
+            <div class="field">
+              <label>Password Baru</label>
+              <input type="text" id="inNewPass" placeholder="Minimal 6 karakter">
+            </div>
+            <div class="field">
+              <label>Posisi</label>
+              <select id="inNewPosisi">
+                <option value="Admin">Admin</option>
+                <option value="Kepala GO">Kepala GO</option>
+                <option value="Staf">Staf</option>
+                <option value="Pengajar">Pengajar</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="doTambahAdmin()">Tambah Akun</button>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <h2>Ganti Password Saya</h2>
+            <p>Ubah password untuk akun yang sedang dipakai.</p>
           </div>
           <div class="form-grid">
             <div class="field">
-              <label>Username Admin</label>
+              <label>Username</label>
               <input type="text" id="inUser" readonly>
             </div>
             <div class="field">
@@ -491,7 +520,7 @@
 
   </main>
 
-  <footer class="footer">TST GO Sumenep v4.1</footer>
+  <footer class="footer">TST GO Sumenep v5.0</footer>
 
   <div id="loginModal" class="modal hidden">
     <div class="modal-box">
@@ -517,7 +546,7 @@
   <div id="toast" class="toast hidden"></div>
 
   <script>
-    var API_URL = 'https://script.google.com/macros/s/AKfycbwt62ink49EYK2MT698kdBVIMkkSD4xyuyvQJaB-t-_LQLjci_EGeGMZv_DGiQf1nqb/exec';
+    var API_URL = 'https://script.google.com/macros/s/AKfycbw-QinByFDJJDW78gjEk0Q0q5nlnKMXMnOhggsVjF1Hv5yVODfrzNyKsA7--6w8Yt9B1w/exec';
     var cfg = { kebutuhan: [], jmlHari: 3 };
     var siswaList = [];
     var permintaanList = [];
@@ -606,6 +635,9 @@
           case 'getTelegramStatus': run.getTelegramStatus(args[0]); break;
           case 'simpanBotConfig': run.simpanBotConfig(args[0], args[1], args[2]); break;
           case 'tesTelegram': run.tesTelegram(args[0]); break;
+          case 'getAdmins': run.getAdmins(args[0]); break;
+          case 'tambahAdmin': run.tambahAdmin(args[0], args[1], args[2], args[3]); break;
+          case 'hapusAdmin': run.hapusAdmin(args[0], args[1]); break;
           default: showLoader(false);
         }
         return;
@@ -745,7 +777,7 @@
           renderHeader();
           showView('admin');
           loadAdmin();
-          showToast('Selamat datang, Admin!', 'ok');
+          showToast('Selamat datang, ' + (res.posisi || 'Admin') + '!', 'ok');
         } else {
           showToast(res.message, 'err');
         }
@@ -786,7 +818,7 @@
       document.querySelectorAll('.tab-panel').forEach(function (p) {
         p.classList.toggle('hidden', p.id !== name);
       });
-      if (name === 'tab-pengaturan') loadTelegramStatus();
+      if (name === 'tab-pengaturan') { loadTelegramStatus(); renderAdmins(); }
     }
 
     function loadTelegramStatus() {
@@ -829,8 +861,12 @@
         jadwalList = res || [];
         renderJadwal();
       });
-      call('getAdminUser', [token], function (u) { $('inUser').value = u || 'admin'; });
+      call('getAdminUser', [token], function (u) {
+        u = u || {};
+        $('inUser').value = (u.user || 'admin') + ' - ' + (u.posisi || 'Admin');
+      });
       renderSiswa();
+      renderAdmins();
     }
 
     function renderPermintaan() {
@@ -998,6 +1034,56 @@
         } else {
           showToast(res.message, 'err');
         }
+      });
+    }
+
+    function renderAdmins() {
+      if (!isAdmin) return;
+      call('getAdmins', [token], function (list) {
+        if (list && list.error) { showToast(list.error, 'err'); return; }
+        list = list || [];
+        var html;
+        if (!list.length) {
+          html = '<tr><td class="empty">Belum ada akun admin.</td></tr>';
+        } else {
+          html = '<thead><tr><th>Username</th><th>Posisi</th><th>Aksi</th></tr></thead><tbody>';
+          list.forEach(function (a) {
+            html += '<tr>' +
+              '<td data-label="Username">' + esc(a.username) + '</td>' +
+              '<td data-label="Posisi">' + badge(a.posisi) + '</td>' +
+              '<td data-label="Aksi" class="aksi">' +
+                '<button class="btn btn-outline btn-sm" onclick="doHapusAdmin(\'' + esc(a.username) + '\')">Hapus</button>' +
+              '</td>' +
+              '</tr>';
+          });
+          html += '</tbody>';
+        }
+        $('tableAdmins').innerHTML = html;
+      });
+    }
+
+    function doTambahAdmin() {
+      var u = $('inNewUser').value.trim();
+      var p = $('inNewPass').value.trim();
+      var pos = $('inNewPosisi').value;
+      if (!u || !p) { showToast('Lengkapi username dan password.', 'err'); return; }
+      call('tambahAdmin', [token, u, p, pos], function (res) {
+        if (res.success) {
+          showToast(res.message, 'ok');
+          $('inNewUser').value = '';
+          $('inNewPass').value = '';
+          renderAdmins();
+        } else {
+          showToast(res.message, 'err');
+        }
+      });
+    }
+
+    function doHapusAdmin(username) {
+      if (!window.confirm('Hapus akun "' + username + '"? Tindakan ini tidak bisa dibatalkan.')) return;
+      call('hapusAdmin', [token, username], function (res) {
+        if (res.success) { showToast(res.message, 'ok'); renderAdmins(); }
+        else { showToast(res.message, 'err'); }
       });
     }
 
